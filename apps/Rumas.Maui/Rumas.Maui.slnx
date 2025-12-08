@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="Rumas.Maui.AppHost/Rumas.Maui.AppHost.csproj" />
+  <Project Path="Rumas.Maui.ServiceDefaults/Rumas.Maui.ServiceDefaults.csproj" />
+  <Project Path="Rumas.Maui/Rumas.Maui.Shared/Rumas.Maui.Shared.csproj" />
+  <Project Path="Rumas.Maui/Rumas.Maui.Web.Client/Rumas.Maui.Web.Client.csproj" />
+  <Project Path="Rumas.Maui/Rumas.Maui.Web/Rumas.Maui.Web.csproj" />
+  <Project Path="Rumas.Maui/Rumas.Maui/Rumas.Maui.csproj" />
+</Solution>

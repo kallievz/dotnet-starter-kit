@@ -1,0 +1,25 @@
+:root {
+  --fsh-radius: 10px;
+  --fsh-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+}
+
+.fsh-card {
+  border-radius: var(--fsh-radius);
+  box-shadow: var(--fsh-shadow);
+}
+
+.fsh-btn {
+  border-radius: var(--fsh-radius);
+  font-weight: 600;
+}
+
+.fsh-avatar {
+  border-radius: 50%;
+}
+
+.fsh-section {
+  padding: 1.5rem;
+}
+.fsh-chip {
+  border-radius: 9999px;
+}

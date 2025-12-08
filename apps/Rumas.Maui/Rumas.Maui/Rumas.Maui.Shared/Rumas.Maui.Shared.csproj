@@ -1,0 +1,30 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Rumas.Maui.Shared</RootNamespace>
+    <AssemblyName>Rumas.Maui.Shared</AssemblyName>
+
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="Services\AuthService.cs" />
+    <Compile Remove="Services\IAuthService.cs" />
+    <Compile Remove="Services\InMemoryTokenStorageService.cs" />
+    <Compile Remove="Services\ITokenStorageService.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <SupportedPlatform Include="browser" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+    <PackageReference Include="MudBlazor" Version="8.0.0" />
+    <PackageReference Include="MudBlazor.ThemeManager" Version="3.0.0" />
+  </ItemGroup>
+
+</Project>

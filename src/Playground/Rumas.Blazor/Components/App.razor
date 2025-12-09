@@ -1,0 +1,30 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />  
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <link href=@Assets["_content/MudBlazor/MudBlazor.min.css"] rel="stylesheet" />
+    <link href="@Assets["_content/FSH.Framework.Blazor.UI/fsh-theme.css"]" rel="stylesheet" />
+    <link href="https://blazor.cdn.telerik.com/blazor/12.0.0/kendo-theme-bootstrap/swatches/bootstrap-urban.css" rel="stylesheet" type="text/css" />
+    <link href="https://blazor.cdn.telerik.com/blazor/12.0.0/kendo-font-icons/font-icons.css" rel="stylesheet" type="text/css" />
+    <script src="https://blazor.cdn.telerik.com/blazor/12.0.0/telerik-blazor.min.js" defer></script>
+    <ImportMap />
+    <link rel="icon" type="image/svg" href="https://rumas.co.za/favicon.svg" />
+    <HeadOutlet @rendermode="InteractiveServer" />
+</head>
+
+<body>
+    <Routes @rendermode="InteractiveServer" />
+    <script src="_framework/blazor.web.js" autostart="false"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+           Blazor.start();
+        });
+    </script>
+    <script src=@Assets["_content/MudBlazor/MudBlazor.min.js"]></script>
+</body>
+
+</html>

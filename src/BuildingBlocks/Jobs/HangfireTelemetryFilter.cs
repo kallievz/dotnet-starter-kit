@@ -12,11 +12,11 @@ public sealed class HangfireTelemetryFilter : JobFilterAttribute, IServerFilter
     private const string ActivityKey = "__fsh_activity";
     private static readonly ActivitySource ActivitySource = new("FSH.Hangfire");
 
-    public void OnPerforming(PerformingContext filterContext)
+    public void OnPerforming(PerformingContext context)
     {
-        ArgumentNullException.ThrowIfNull(filterContext);
+        ArgumentNullException.ThrowIfNull(context);
 
-        var job = filterContext.BackgroundJob?.Job;
+        var job = context.BackgroundJob?.Job;
         string name = job is null
             ? "Hangfire.Job"
             : $"{job.Type.Name}.{job.Method.Name}";
@@ -27,27 +27,27 @@ public sealed class HangfireTelemetryFilter : JobFilterAttribute, IServerFilter
             return;
         }
 
-        activity.SetTag("hangfire.job_id", filterContext.BackgroundJob?.Id);
+        activity.SetTag("hangfire.job_id", context.BackgroundJob?.Id);
         activity.SetTag("hangfire.job_type", job?.Type.FullName);
         activity.SetTag("hangfire.job_method", job?.Method.Name);
 
-        filterContext.Items[ActivityKey] = activity;
+        context.Items[ActivityKey] = activity;
     }
 
-    public void OnPerformed(PerformedContext filterContext)
+    public void OnPerformed(PerformedContext context)
     {
-        ArgumentNullException.ThrowIfNull(filterContext);
+        ArgumentNullException.ThrowIfNull(context);
 
-        if (!filterContext.Items.TryGetValue(ActivityKey, out var value) || value is not Activity activity)
+        if (!context.Items.TryGetValue(ActivityKey, out var value) || value is not Activity activity)
         {
             return;
         }
 
-        if (filterContext.Exception is not null)
+        if (context.Exception is not null)
         {
             activity.SetStatus(ActivityStatusCode.Error);
-            activity.SetTag("exception.type", filterContext.Exception.GetType().FullName);
-            activity.SetTag("exception.message", filterContext.Exception.Message);
+            activity.SetTag("exception.type", context.Exception.GetType().FullName);
+            activity.SetTag("exception.message", context.Exception.Message);
         }
         else
         {

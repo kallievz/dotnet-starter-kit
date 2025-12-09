@@ -28,6 +28,7 @@
     <Project Path="Playground/FSH.Playground.AppHost/FSH.Playground.AppHost.csproj" Id="86bd02ee-f1b5-472c-b5bd-bc607fe084de" />
     <Project Path="Playground/Playground.Api/Playground.Api.csproj" Id="187ce245-0a57-469c-96c2-a88902f2d40d" />
     <Project Path="Playground/Playground.Blazor/Playground.Blazor.csproj" />
+    <Project Path="Playground/Rumas.Blazor/Rumas.Blazor.csproj" />
   </Folder>
   <Folder Name="/Playground/Migrations/">
     <Project Path="Playground/Migrations.PostgreSQL/Migrations.PostgreSQL.csproj" Id="2c21903e-5dfa-47e0-82d9-1a0bd627fcbd" />

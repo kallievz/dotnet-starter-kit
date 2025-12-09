@@ -1,0 +1,124 @@
+@page "/audits"
+@using System.Linq
+@using System.Text.Json
+@using MudBlazor
+@inherits ComponentBase
+<PageTitle>Audits</PageTitle>
+    <MudPaper Class="fsh-card pa-4 mb-3">
+        <MudGrid>
+            <MudItem xs="12" sm="6" md="3">
+                <MudTextField @bind-Value="_filter.Type" Label="Type" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudTextField @bind-Value="_filter.User" Label="User" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudTextField @bind-Value="_filter.CorrelationId" Label="Correlation Id" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3" Class="d-flex align-center">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadAudits">Search</MudButton>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    <MudPaper Class="fsh-card pa-4">
+        <MudTable Items="_audits" Dense="true" Hover="true">
+            <HeaderContent>
+                <MudTh>Timestamp</MudTh>
+                <MudTh>Event Type</MudTh>
+                <MudTh>User</MudTh>
+                <MudTh>Correlation</MudTh>
+                <MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Timestamp">@context.OccurredAtUtc.ToLocalTime()</MudTd>
+                <MudTd DataLabel="Event Type">@context.EventType</MudTd>
+                <MudTd DataLabel="User">@context.UserName</MudTd>
+                <MudTd DataLabel="Correlation">@context.CorrelationId</MudTd>
+                <MudTd>
+                    <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="@(() => ShowDetails(context))">Details</MudButton>
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudPaper>
+
+    @if (_showDialog && _selected is not null)
+    {
+        <MudPaper Class="fsh-card pa-4 mt-3">
+            <MudText Typo="Typo.h6">Audit Detail</MudText>
+            <MudText Typo="Typo.subtitle2">Event Type: @_selected.EventType</MudText>
+            <MudText Typo="Typo.subtitle2">Severity: @_selected.Severity</MudText>
+            <MudText Typo="Typo.subtitle2">User: @_selected.UserName</MudText>
+            <MudText Typo="Typo.subtitle2">Correlation: @_selected.CorrelationId</MudText>
+            <MudText Typo="Typo.subtitle2">Trace: @_selected.TraceId</MudText>
+            <MudText Typo="Typo.subtitle2">Timestamp: @_selected.OccurredAtUtc.ToLocalTime()</MudText>
+            <MudText Typo="Typo.body2" Class="mt-2">Payload:</MudText>
+            <MudPaper Class="pa-2 mt-1" Outlined="true">
+                <pre>@_selectedPayload</pre>
+            </MudPaper>
+            <MudButton Class="mt-2" OnClick="CloseDialog">Close</MudButton>
+        </MudPaper>
+    }
+
+@code {
+    private FilterDto _filter = new();
+    private List<FSH.Rumas.Blazor.ApiClient.AuditSummaryDto> _audits = new();
+    private bool _showDialog;
+    [Inject] private FSH.Rumas.Blazor.ApiClient.IV1Client V1Client { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+    private FSH.Rumas.Blazor.ApiClient.AuditDetailDto? _selected;
+    private string _selectedPayload => _selected is null ? string.Empty : JsonSerializer.Serialize(_selected.Payload, new JsonSerializerOptions { WriteIndented = true });
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAudits();
+    }
+
+    private async Task LoadAudits()
+    {
+        try
+        {
+            var search = string.Join(" ", new[] { _filter.Type, _filter.User }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim();
+            var result = await V1Client.AuditsGetAsync(
+                pageNumber: 1,
+                pageSize: 20,
+                correlationId: string.IsNullOrWhiteSpace(_filter.CorrelationId) ? null : _filter.CorrelationId,
+                search: string.IsNullOrWhiteSpace(search) ? null : search);
+
+            _audits = result.Items?.ToList() ?? new List<FSH.Rumas.Blazor.ApiClient.AuditSummaryDto>();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load audits: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ShowDetails(FSH.Rumas.Blazor.ApiClient.AuditSummaryDto audit)
+    {
+        try
+        {
+            var detail = await V1Client.AuditsGetAsync(audit.Id);
+            _selected = detail;
+            _showDialog = true;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load audit detail: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private Task CloseDialog()
+    {
+        _selected = null;
+        _showDialog = false;
+        return Task.CompletedTask;
+    }
+
+    private sealed class FilterDto
+    {
+        public string? Type { get; set; }
+        public string? User { get; set; }
+        public string? CorrelationId { get; set; }
+    }
+
+}

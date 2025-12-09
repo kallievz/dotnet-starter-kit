@@ -15,6 +15,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Playground.Api\Playground.Api.csproj" />
     <ProjectReference Include="..\Playground.Blazor\Playground.Blazor.csproj" />
+    <ProjectReference Include="..\Rumas.Blazor\Rumas.Blazor.csproj" />
   </ItemGroup>
 
 </Project>

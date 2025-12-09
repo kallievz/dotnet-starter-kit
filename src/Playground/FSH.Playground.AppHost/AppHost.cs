@@ -7,7 +7,7 @@ var redis = builder.AddRedis("redis").WithDataVolume("fsh-redis-data");
 
 builder.AddProject<Projects.Playground_Api>("playground-api")
     .WithReference(postgres)
-    .WithEnvironment("ASPNETCORE_ENVIRONMENT", "Production")
+    .WithEnvironment("ASPNETCORE_ENVIRONMENT", "Development")
     .WithEnvironment("OpenTelemetryOptions__Exporter__Otlp__Endpoint", "https://localhost:4317")
     .WithEnvironment("OpenTelemetryOptions__Exporter__Otlp__Protocol", "grpc")
     .WithEnvironment("OpenTelemetryOptions__Exporter__Otlp__Enabled", "true")

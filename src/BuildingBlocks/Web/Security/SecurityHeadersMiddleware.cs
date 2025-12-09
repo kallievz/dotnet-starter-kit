@@ -1,18 +1,25 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Options;
 
 namespace FSH.Framework.Web.Security;
 
-public sealed class SecurityHeadersMiddleware(RequestDelegate next)
+public sealed class SecurityHeadersMiddleware(RequestDelegate next, IOptions<SecurityHeadersOptions> options)
 {
+    private readonly SecurityHeadersOptions _options = options.Value;
+
     public Task InvokeAsync(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
 
+        if (!_options.Enabled)
+        {
+            return next(context);
+        }
+
         var path = context.Request.Path;
 
-        // Allow OpenAPI / Scalar UI to manage their own scripts/styles.
-        if (path.StartsWithSegments("/scalar", StringComparison.OrdinalIgnoreCase) ||
-            path.StartsWithSegments("/openapi", StringComparison.OrdinalIgnoreCase))
+        // Allow listed paths (e.g., OpenAPI / Scalar UI) to manage their own scripts/styles.
+        if (_options.ExcludedPaths?.Any(p => path.StartsWithSegments(p, StringComparison.OrdinalIgnoreCase)) == true)
         {
             return next(context);
         }
@@ -26,14 +33,19 @@ public sealed class SecurityHeadersMiddleware(RequestDelegate next)
 
         if (!headers.ContainsKey("Content-Security-Policy"))
         {
-            headers["Content-Security-Policy"] =
+            var scriptSources = string.Join(' ', _options.ScriptSources ?? []);
+            var styleSources = string.Join(' ', _options.StyleSources ?? []);
+
+            var csp =
                 "default-src 'self'; " +
                 "img-src 'self' data: https:; " +
-                "script-src 'self' https:; " +
-                "style-src 'self' 'unsafe-inline'; " +
+                $"script-src 'self' https: {scriptSources}; " +
+                $"style-src 'self' {(_options.AllowInlineStyles ? "'unsafe-inline' " : string.Empty)}{styleSources}; " +
                 "object-src 'none'; " +
                 "frame-ancestors 'none'; " +
                 "base-uri 'self';";
+
+            headers["Content-Security-Policy"] = csp;
         }
 
         return next(context);

@@ -11,6 +11,22 @@ using System.Reflection;
 
 var builder = WebApplication.CreateBuilder(args);
 
+if (builder.Environment.IsProduction())
+{
+    static void Require(IConfiguration config, string key)
+    {
+        if (string.IsNullOrWhiteSpace(config[key]))
+        {
+            throw new InvalidOperationException($"Missing required configuration '{key}' in Production.");
+        }
+    }
+
+    var config = builder.Configuration;
+    Require(config, "DatabaseOptions:ConnectionString");
+    Require(config, "CachingOptions:Redis");
+    Require(config, "JwtOptions:SigningKey");
+}
+
 builder.Services.AddMediator(o =>
 {
     o.ServiceLifetime = ServiceLifetime.Scoped;

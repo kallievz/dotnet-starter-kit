@@ -81,6 +81,7 @@ public static class Extensions
         builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
         builder.Services.AddProblemDetails();
         builder.Services.AddOptions<OriginOptions>().BindConfiguration(nameof(OriginOptions));
+        builder.Services.AddOptions<SecurityHeadersOptions>().BindConfiguration(nameof(SecurityHeadersOptions));
 
         return builder;
     }

@@ -21,6 +21,5 @@ builder.AddProject<Projects.Playground_Api>("playground-api")
 
 builder.AddProject<Projects.Playground_Blazor>("playground-blazor");
 
-builder.AddProject<Projects.Rumas_Blazor>("rumas-blazor");
 
 await builder.Build().RunAsync();

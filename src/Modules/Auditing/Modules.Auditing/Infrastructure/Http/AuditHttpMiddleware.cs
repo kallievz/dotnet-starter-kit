@@ -83,6 +83,8 @@ public sealed class AuditHttpMiddleware
                 .WithSource("api")
                 .WithTenant((_publisher.CurrentScope?.TenantId) ?? null)
                 .WithUser(_publisher.CurrentScope?.UserId, _publisher.CurrentScope?.UserName)
+                .WithCorrelation(_publisher.CurrentScope?.CorrelationId ?? ctx.TraceIdentifier)
+                .WithRequestId(_publisher.CurrentScope?.RequestId ?? ctx.TraceIdentifier)
                 .WriteAsync(ctx.RequestAborted);
         }
         catch (Exception ex)
@@ -97,6 +99,8 @@ public sealed class AuditHttpMiddleware
                     .WithSource("api")
                     .WithTenant((_publisher.CurrentScope?.TenantId) ?? null)
                     .WithUser(_publisher.CurrentScope?.UserId, _publisher.CurrentScope?.UserName)
+                    .WithCorrelation(_publisher.CurrentScope?.CorrelationId ?? ctx.TraceIdentifier)
+                    .WithRequestId(_publisher.CurrentScope?.RequestId ?? ctx.TraceIdentifier)
                     .WriteAsync(ctx.RequestAborted);
             }
 
@@ -112,4 +116,3 @@ public sealed class AuditHttpMiddleware
             path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
     }
 }
-

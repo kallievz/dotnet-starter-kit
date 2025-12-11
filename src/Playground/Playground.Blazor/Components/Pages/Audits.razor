@@ -1,123 +1,508 @@
 @page "/audits"
 @using System.Linq
+@using System.Text
 @using System.Text.Json
 @using MudBlazor
-@inherits ComponentBase
-    <MudPaper Class="fsh-card pa-4 mb-3">
-        <MudGrid>
-            <MudItem xs="12" sm="6" md="3">
-                <MudTextField @bind-Value="_filter.Type" Label="Type" />
-            </MudItem>
-            <MudItem xs="12" sm="6" md="3">
-                <MudTextField @bind-Value="_filter.User" Label="User" />
-            </MudItem>
-            <MudItem xs="12" sm="6" md="3">
-                <MudTextField @bind-Value="_filter.CorrelationId" Label="Correlation Id" />
-            </MudItem>
-            <MudItem xs="12" sm="6" md="3" Class="d-flex align-center">
-                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadAudits">Search</MudButton>
-            </MudItem>
-        </MudGrid>
+
+<MudContainer MaxWidth="MaxWidth.False" Class="audit-shell">
+    <MudPaper Class="hero-card pa-5 mb-4">
+        <MudStack Spacing="1">
+            <MudText Typo="Typo.h5" Class="fw-600">Audit Center</MudText>
+            <MudText Typo="Typo.body2" Class="text-muted">
+                Investigate activity, security, and exception events across tenants with rich filters and inline details.
+            </MudText>
+        </MudStack>
     </MudPaper>
 
-    <MudPaper Class="fsh-card pa-4">
-        <MudTable Items="_audits" Dense="true" Hover="true">
+    <MudCard Class="filter-card mb-4" Elevation="1">
+        <MudCardHeader>
+            <CardHeaderContent>
+                <MudText Typo="Typo.h6">Filters</MudText>
+            </CardHeaderContent>
+            <CardHeaderActions>
+                <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="ResetFilters">Reset Filters</MudButton>
+            </CardHeaderActions>
+        </MudCardHeader>
+        <MudCardContent Class="pa-4">
+            <MudGrid GutterSize="3">
+                <MudItem xs="12" sm="6" md="4">
+                    <MudDateRangePicker @bind-DateRange="_filter.Range" Label="Date range" Color="Color.Primary" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="4">
+                    <MudTextField @bind-Value="_filter.Actor" Label="Actor/User" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Person" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="4">
+                    <MudTextField @bind-Value="_filter.Search" Label="Search (event/user/resource)" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
+                </MudItem>
+
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="AuditEventTypeOption?" @bind-Value="_filter.EventType" Label="Event type" Clearable="true">
+                        <MudSelectItem Value="@( (AuditEventTypeOption?)null )">All</MudSelectItem>
+                        @foreach (var value in _eventTypes)
+                        {
+                            <MudSelectItem Value="@( (AuditEventTypeOption?)value )">@value</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="AuditSeverityOption?" @bind-Value="_filter.Severity" Label="Severity" Clearable="true">
+                        <MudSelectItem Value="@( (AuditSeverityOption?)null )">All</MudSelectItem>
+                        @foreach (var value in _severities)
+                        {
+                            <MudSelectItem Value="@( (AuditSeverityOption?)value )">@value</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudTextField @bind-Value="_filter.Resource" Label="Source/Resource" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudTextField @bind-Value="_filter.CorrelationId" Label="Correlation Id" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudTextField @bind-Value="_filter.TraceId" Label="Trace Id" />
+                </MudItem>
+            </MudGrid>
+        </MudCardContent>
+        <MudCardActions Class="px-4 pb-4 pt-2">
+            <MudButtonGroup Color="Color.Primary" Variant="Variant.Filled">
+                <MudButton Variant="Variant.Outlined" Color="Color.Info" OnClick="@(() => ApplyQuickRange(TimeSpan.FromHours(1)))">Last 1h</MudButton>
+                <MudButton>Two</MudButton>
+                <MudButton>Three</MudButton>
+            </MudButtonGroup>
+            <MudStack Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="w-100 flex-wrap">
+                <MudStack Spacing="1" Class="flex-wrap">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Info" OnClick="@(() => ApplyQuickRange(TimeSpan.FromHours(1)))">Last 1h</MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Info" OnClick="@(() => ApplyQuickRange(TimeSpan.FromHours(24)))">Last 24h</MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Info" OnClick="@(() => ApplyQuickRange(TimeSpan.FromDays(7)))">Last 7d</MudButton>
+                    <MudButton Variant="Variant.Text" Color="Color.Secondary" OnClick="ResetFilters">Reset</MudButton>
+                </MudStack>
+                <MudStack Spacing="1">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Tune" OnClick="ReloadTable">Apply</MudButton>
+                    <MudMenu AnchorOrigin="Origin.BottomCenter" TransformOrigin="Origin.TopCenter" Variant="Variant.Outlined" Color="Color.Primary" Label="Export">
+                        <MudMenuItem OnClick="@(() => ExportAsync("csv"))">CSV</MudMenuItem>
+                        <MudMenuItem OnClick="@(() => ExportAsync("json"))">JSON</MudMenuItem>
+                    </MudMenu>
+                </MudStack>
+            </MudStack>
+        </MudCardActions>
+    </MudCard>
+
+    <MudPaper Class="table-card pa-0">
+        <MudTable T="FSH.Playground.Blazor.ApiClient.AuditSummaryDto"
+                  @ref="_table"
+                  Class="audit-table"
+                  ServerData="LoadAudits"
+                  Hover="true"
+                  Dense="false"
+                  Loading="_loading"
+                  RowsPerPage="@_pageSize"
+                  RowsPerPageChanged="OnRowsPerPageChanged"
+                  Breakpoint="Breakpoint.Sm">
+            <ToolBarContent>
+                <MudStack Direction="Row" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="w-100 px-4 py-3">
+                    <MudStack Spacing="1">
+                        <MudText Typo="Typo.subtitle1">Audit Events</MudText>
+                        <MudText Typo="Typo.caption" Class="text-muted">Total: @_totalCount</MudText>
+                    </MudStack>
+                    <MudStack Direction="Row" Spacing="1" AlignItems="AlignItems.Center">
+                        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Success" Size="Size.Small">@($"{_pageSize}/page")</MudChip>
+                    </MudStack>
+                </MudStack>
+            </ToolBarContent>
             <HeaderContent>
-                <MudTh>Timestamp</MudTh>
-                <MudTh>Event Type</MudTh>
-                <MudTh>User</MudTh>
+                <MudTh Sortable="true" SortLabel="OccurredAtUtc">Timestamp</MudTh>
+                <MudTh Sortable="true" SortLabel="EventType">Event</MudTh>
+                <MudTh Sortable="true" SortLabel="Severity">Severity</MudTh>
+                <MudTh Sortable="true" SortLabel="UserName">User</MudTh>
+                <MudTh>Source</MudTh>
                 <MudTh>Correlation</MudTh>
-                <MudTh></MudTh>
+                <MudTh>Actions</MudTh>
             </HeaderContent>
             <RowTemplate>
-                <MudTd DataLabel="Timestamp">@context.OccurredAtUtc.ToLocalTime()</MudTd>
-                <MudTd DataLabel="Event Type">@context.EventType</MudTd>
-                <MudTd DataLabel="User">@context.UserName</MudTd>
-                <MudTd DataLabel="Correlation">@context.CorrelationId</MudTd>
+                <MudTd DataLabel="Timestamp">
+                    <MudText Typo="Typo.body2">@context.OccurredAtUtc.ToLocalTime()</MudText>
+                </MudTd>
+                <MudTd DataLabel="Event">
+                    <MudText Typo="Typo.body2">@FormatEventType(context.EventType)</MudText>
+                </MudTd>
+                <MudTd DataLabel="Severity">
+                    <MudText Typo="Typo.body2">@FormatSeverity(context.Severity)</MudText>
+                </MudTd>
+                <MudTd DataLabel="User">
+                    <MudText Typo="Typo.body2">@context.UserName</MudText>
+                </MudTd>
+                <MudTd DataLabel="Source">
+                    <MudText Typo="Typo.body2">@context.Source</MudText>
+                </MudTd>
+                <MudTd DataLabel="Correlation">
+                    <MudText Typo="Typo.body2">@context.CorrelationId</MudText>
+                </MudTd>
                 <MudTd>
-                    <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="@(() => ShowDetails(context))">Details</MudButton>
+                    <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="@(() => ToggleDetail(context))">
+                        @(IsExpanded(context.Id) ? "Hide" : "Details")
+                    </MudButton>
                 </MudTd>
             </RowTemplate>
+            <ChildRowContent Context="context">
+                @if (IsExpanded(context.Id))
+                {
+                    <MudTd ColSpan="7">
+                        @if (TryGetDetail(context.Id, out var detail) && detail is not null)
+                        {
+                            var d = detail;
+                            <MudPaper Class="pa-3 ma-2" Outlined="true">
+                                <MudStack Spacing="1">
+                                    <MudText Typo="Typo.subtitle2">Event: @FormatEventType(d.EventType) • Severity: @FormatSeverity(d.Severity)</MudText>
+                                    <MudText Typo="Typo.body2">Tenant: @d.TenantId</MudText>
+                                    <MudText Typo="Typo.body2">User: @d.UserName</MudText>
+                                    <MudText Typo="Typo.body2">Source: @d.Source</MudText>
+                                    <MudText Typo="Typo.body2">Correlation: @d.CorrelationId</MudText>
+                                    <MudText Typo="Typo.body2">Trace: @d.TraceId</MudText>
+                                    <MudText Typo="Typo.body2">Span: @d.SpanId</MudText>
+                                    <MudText Typo="Typo.body2">Request: @d.RequestId</MudText>
+                                    <MudText Typo="Typo.body2">Occurred: @d.OccurredAtUtc.ToLocalTime()</MudText>
+                                    <MudText Typo="Typo.body2">Received: @d.ReceivedAtUtc.ToLocalTime()</MudText>
+                                    <MudText Typo="Typo.body2">Tags: @d.Tags</MudText>
+                                    <MudText Typo="Typo.subtitle2" Class="mt-2">Payload</MudText>
+                                    <MudPaper Class="pa-2" Outlined="true" Style="max-height: 320px; overflow:auto;">
+                                        <pre style="white-space: pre-wrap; word-break: break-word;">@FormatPayload(d.Payload)</pre>
+                                    </MudPaper>
+                                </MudStack>
+                            </MudPaper>
+                        }
+                        else
+                        {
+                            <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+                        }
+                    </MudTd>
+                }
+            </ChildRowContent>
+            <NoRecordsContent>
+                <MudText Typo="Typo.body2">No audits found. Adjust your filters and try again.</MudText>
+            </NoRecordsContent>
+            <PagerContent>
+                <MudTablePager PageSizeOptions="PageSizeOptions"
+                               PageSizeChanged="OnRowsPerPageChanged"
+                               PageSize="@_pageSize"
+                               HorizontalAlignment="HorizontalAlignment.Right" />
+            </PagerContent>
         </MudTable>
     </MudPaper>
+</MudContainer>
 
-    @if (_showDialog && _selected is not null)
-    {
-        <MudPaper Class="fsh-card pa-4 mt-3">
-            <MudText Typo="Typo.h6">Audit Detail</MudText>
-            <MudText Typo="Typo.subtitle2">Event Type: @_selected.EventType</MudText>
-            <MudText Typo="Typo.subtitle2">Severity: @_selected.Severity</MudText>
-            <MudText Typo="Typo.subtitle2">User: @_selected.UserName</MudText>
-            <MudText Typo="Typo.subtitle2">Correlation: @_selected.CorrelationId</MudText>
-            <MudText Typo="Typo.subtitle2">Trace: @_selected.TraceId</MudText>
-            <MudText Typo="Typo.subtitle2">Timestamp: @_selected.OccurredAtUtc.ToLocalTime()</MudText>
-            <MudText Typo="Typo.body2" Class="mt-2">Payload:</MudText>
-            <MudPaper Class="pa-2 mt-1" Outlined="true">
-                <pre>@_selectedPayload</pre>
-            </MudPaper>
-            <MudButton Class="mt-2" OnClick="CloseDialog">Close</MudButton>
-        </MudPaper>
+<style>
+    .audit-shell {
+        background: var(--mud-palette-background);
     }
+
+    .hero-card {
+        border-radius: 14px;
+        background: linear-gradient(135deg, rgba(79, 70, 229, 0.08), rgba(14, 165, 233, 0.08));
+    }
+</style>
 
 @code {
+    private const int ApiPageSizeLimit = 100;
+    private static readonly int[] PageSizeOptions = new[] { 10, 25, 50, ApiPageSizeLimit };
+    private readonly AuditEventTypeOption[] _eventTypes = Enum.GetValues(typeof(AuditEventTypeOption)).Cast<AuditEventTypeOption>().Where(v => v != AuditEventTypeOption.None).ToArray();
+    private readonly AuditSeverityOption[] _severities = Enum.GetValues(typeof(AuditSeverityOption)).Cast<AuditSeverityOption>().Where(v => v != AuditSeverityOption.None).ToArray();
     private FilterDto _filter = new();
-    private List<FSH.Playground.Blazor.ApiClient.AuditSummaryDto> _audits = new();
-    private bool _showDialog;
+    private MudTable<FSH.Playground.Blazor.ApiClient.AuditSummaryDto>? _table;
+    private IReadOnlyList<FSH.Playground.Blazor.ApiClient.AuditSummaryDto> _currentPage = Array.Empty<FSH.Playground.Blazor.ApiClient.AuditSummaryDto>();
+    private TableState _lastState = new() { SortLabel = "OccurredAtUtc", SortDirection = SortDirection.Descending, PageSize = 25 };
+    private int _pageSize = 25;
+    private bool _loading;
+    private int _totalCount;
+    private readonly Dictionary<Guid, FSH.Playground.Blazor.ApiClient.AuditDetailDto> _detailCache = new();
+    private readonly HashSet<Guid> _expanded = new();
+
     [Inject] private FSH.Playground.Blazor.ApiClient.IV1Client V1Client { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
-    private FSH.Playground.Blazor.ApiClient.AuditDetailDto? _selected;
-    private string _selectedPayload => _selected is null ? string.Empty : JsonSerializer.Serialize(_selected.Payload, new JsonSerializerOptions { WriteIndented = true });
+    [Inject] private NavigationManager NavigationManager { get; set; } = default!;
 
-    protected override async Task OnInitializedAsync()
+    private async Task<TableData<FSH.Playground.Blazor.ApiClient.AuditSummaryDto>> LoadAudits(TableState state, CancellationToken cancellationToken)
     {
-        await LoadAudits();
-    }
-
-    private async Task LoadAudits()
-    {
+        _loading = true;
         try
         {
-            var search = string.Join(" ", new[] { _filter.Type, _filter.User }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim();
+            _lastState = new TableState
+            {
+                Page = state.Page,
+                PageSize = Math.Min(state.PageSize, ApiPageSizeLimit),
+                SortLabel = state.SortLabel,
+                SortDirection = state.SortDirection
+            };
+            var sort = BuildSort(state);
             var result = await V1Client.AuditsGetAsync(
-                pageNumber: 1,
-                pageSize: 20,
+                pageNumber: state.Page + 1,
+                pageSize: Math.Min(state.PageSize, ApiPageSizeLimit),
+                sort: sort,
+                fromUtc: _filter.FromUtc,
+                toUtc: _filter.ToUtc,
+                userId: _filter.Actor,
+                eventType: _filter.EventType.HasValue ? (int)_filter.EventType.Value : null,
+                severity: _filter.Severity.HasValue ? (int)_filter.Severity.Value : null,
+                source: string.IsNullOrWhiteSpace(_filter.Resource) ? null : _filter.Resource,
                 correlationId: string.IsNullOrWhiteSpace(_filter.CorrelationId) ? null : _filter.CorrelationId,
-                search: string.IsNullOrWhiteSpace(search) ? null : search);
+                traceId: string.IsNullOrWhiteSpace(_filter.TraceId) ? null : _filter.TraceId,
+                search: string.IsNullOrWhiteSpace(_filter.Search) ? null : _filter.Search,
+                cancellationToken: cancellationToken);
 
-            _audits = result.Items?.ToList() ?? new List<FSH.Playground.Blazor.ApiClient.AuditSummaryDto>();
+            _currentPage = result.Items?.ToList() ?? new List<FSH.Playground.Blazor.ApiClient.AuditSummaryDto>();
+            _totalCount = (int)result.TotalCount;
+            _expanded.Clear();
+            _detailCache.Clear();
+
+            return new TableData<FSH.Playground.Blazor.ApiClient.AuditSummaryDto>
+            {
+                Items = _currentPage,
+                TotalItems = _totalCount
+            };
         }
         catch (Exception ex)
         {
             Snackbar.Add($"Failed to load audits: {ex.Message}", Severity.Error);
+            return new TableData<FSH.Playground.Blazor.ApiClient.AuditSummaryDto>
+            {
+                Items = Array.Empty<FSH.Playground.Blazor.ApiClient.AuditSummaryDto>(),
+                TotalItems = 0
+            };
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
         }
     }
 
-    private async Task ShowDetails(FSH.Playground.Blazor.ApiClient.AuditSummaryDto audit)
+    private Task ReloadTable()
     {
+        _table?.ReloadServerData();
+        return Task.CompletedTask;
+    }
+
+    private void ResetFilters()
+    {
+        _filter = new FilterDto();
+        _table?.ReloadServerData();
+    }
+
+    private void ApplyQuickRange(TimeSpan span)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var start = DateTime.SpecifyKind(nowUtc.Add(-span), DateTimeKind.Utc);
+        var end = DateTime.SpecifyKind(nowUtc, DateTimeKind.Utc);
+        _filter.Range = new DateRange(start, end);
+        _table?.ReloadServerData();
+    }
+
+    private async Task ToggleDetail(FSH.Playground.Blazor.ApiClient.AuditSummaryDto audit)
+    {
+        if (_expanded.Contains(audit.Id))
+        {
+            _expanded.Remove(audit.Id);
+            StateHasChanged();
+            return;
+        }
+
+        _expanded.Add(audit.Id);
+
+        if (_detailCache.ContainsKey(audit.Id))
+        {
+            StateHasChanged();
+            return;
+        }
+
         try
         {
             var detail = await V1Client.AuditsGetAsync(audit.Id);
-            _selected = detail;
-            _showDialog = true;
+            _detailCache[audit.Id] = detail;
+            StateHasChanged();
         }
         catch (Exception ex)
         {
             Snackbar.Add($"Failed to load audit detail: {ex.Message}", Severity.Error);
+            _expanded.Remove(audit.Id);
         }
     }
 
-    private Task CloseDialog()
+    private bool IsExpanded(Guid id) => _expanded.Contains(id);
+
+    private bool TryGetDetail(Guid id, out FSH.Playground.Blazor.ApiClient.AuditDetailDto? detail) =>
+        _detailCache.TryGetValue(id, out detail);
+
+    private static string FormatPayload(FSH.Playground.Blazor.ApiClient.JsonElement payload) =>
+        JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
+
+    private Task OnRowsPerPageChanged(int size)
     {
-        _selected = null;
-        _showDialog = false;
-        return Task.CompletedTask;
+        _pageSize = Math.Min(size, ApiPageSizeLimit);
+        _table?.SetRowsPerPage(_pageSize);
+        return ReloadTable();
+    }
+
+    private static Color SeverityColor(int severity) =>
+        severity switch
+        {
+            >= 6 => Color.Error,
+            5 => Color.Error,
+            4 => Color.Warning,
+            3 => Color.Info,
+            2 => Color.Dark,
+            1 => Color.Dark,
+            _ => Color.Default
+        };
+
+    private static Color EventTypeColor(int eventType) =>
+        eventType switch
+        {
+            1 => Color.Secondary, // EntityChange
+            2 => Color.Warning,   // Security
+            3 => Color.Info,      // Activity
+            4 => Color.Error,     // Exception
+            _ => Color.Default
+        };
+
+    private static string FormatEventType(int value) =>
+        Enum.GetName(typeof(AuditEventTypeOption), value) ?? value.ToString();
+
+    private static string FormatSeverity(int value) =>
+        Enum.GetName(typeof(AuditSeverityOption), value) ?? value.ToString();
+
+    private async Task ExportAsync(string format)
+    {
+        try
+        {
+            var items = new List<FSH.Playground.Blazor.ApiClient.AuditSummaryDto>();
+            var remaining = Math.Min(_totalCount, ApiPageSizeLimit);
+            var page = 1;
+
+            while (remaining > 0)
+            {
+                var pageSize = Math.Min(remaining, ApiPageSizeLimit);
+                var result = await V1Client.AuditsGetAsync(
+                    pageNumber: page,
+                    pageSize: pageSize,
+                    sort: BuildSort(_lastState),
+                    fromUtc: _filter.FromUtc,
+                    toUtc: _filter.ToUtc,
+                    userId: _filter.Actor,
+                    eventType: _filter.EventType.HasValue ? (int)_filter.EventType.Value : null,
+                    severity: _filter.Severity.HasValue ? (int)_filter.Severity.Value : null,
+                    source: string.IsNullOrWhiteSpace(_filter.Resource) ? null : _filter.Resource,
+                    correlationId: string.IsNullOrWhiteSpace(_filter.CorrelationId) ? null : _filter.CorrelationId,
+                    traceId: string.IsNullOrWhiteSpace(_filter.TraceId) ? null : _filter.TraceId,
+                    search: string.IsNullOrWhiteSpace(_filter.Search) ? null : _filter.Search);
+
+                var pageItems = result.Items?.ToList() ?? new List<FSH.Playground.Blazor.ApiClient.AuditSummaryDto>();
+                if (pageItems.Count == 0)
+                {
+                    break;
+                }
+
+                items.AddRange(pageItems);
+                remaining -= pageItems.Count;
+                page++;
+            }
+
+            if (items.Count == 0)
+            {
+                Snackbar.Add("No audits to export for the current filters.", Severity.Info);
+                return;
+            }
+
+            var bytes = format.Equals("json", StringComparison.OrdinalIgnoreCase)
+                ? Encoding.UTF8.GetBytes(JsonSerializer.Serialize(items, new JsonSerializerOptions { WriteIndented = true }))
+                : BuildCsv(items);
+
+            var contentType = format.Equals("json", StringComparison.OrdinalIgnoreCase) ? "application/json" : "text/csv";
+            var dataUrl = $"data:{contentType};base64,{Convert.ToBase64String(bytes)}";
+            NavigationManager.NavigateTo(dataUrl, true);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Export failed: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private static byte[] BuildCsv(IEnumerable<FSH.Playground.Blazor.ApiClient.AuditSummaryDto> items)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("OccurredAtUtc,EventType,Severity,UserName,Source,CorrelationId,TraceId");
+        foreach (var item in items)
+        {
+            sb.AppendLine(string.Join(",",
+                Quote(item.OccurredAtUtc.ToString("o")),
+                Quote(item.EventType.ToString()),
+                Quote(item.Severity.ToString()),
+                Quote(item.UserName),
+                Quote(item.Source),
+                Quote(item.CorrelationId),
+                Quote(item.TraceId)));
+        }
+
+        return Encoding.UTF8.GetBytes(sb.ToString());
+    }
+
+    private static string Quote(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return "\"\"";
+        }
+
+        return $"\"{value.Replace("\"", "\"\"")}\"";
+    }
+
+    private static string? BuildSort(TableState state)
+    {
+        if (string.IsNullOrWhiteSpace(state.SortLabel))
+        {
+            return "OccurredAtUtc desc";
+        }
+
+        var direction = state.SortDirection == SortDirection.Descending ? "desc" : "asc";
+        return $"{state.SortLabel} {direction}";
     }
 
     private sealed class FilterDto
     {
-        public string? Type { get; set; }
-        public string? User { get; set; }
+        public DateRange? Range { get; set; }
+        public string? Actor { get; set; }
+        public AuditEventTypeOption? EventType { get; set; }
+        public AuditSeverityOption? Severity { get; set; }
+        public string? Resource { get; set; }
         public string? CorrelationId { get; set; }
+        public string? TraceId { get; set; }
+        public string? Search { get; set; }
+
+        public DateTimeOffset? FromUtc => Range?.Start is null
+            ? null
+            : DateTime.SpecifyKind(Range.Start.Value, Range.Start.Value.Kind == DateTimeKind.Unspecified ? DateTimeKind.Utc : Range.Start.Value.Kind).ToUniversalTime();
+
+        public DateTimeOffset? ToUtc => Range?.End is null
+            ? null
+            : DateTime.SpecifyKind(Range.End.Value, Range.End.Value.Kind == DateTimeKind.Unspecified ? DateTimeKind.Utc : Range.End.Value.Kind).ToUniversalTime();
     }
 
+    private enum AuditEventTypeOption
+    {
+        None = 0,
+        EntityChange = 1,
+        Security = 2,
+        Activity = 3,
+        Exception = 4
+    }
+
+    private enum AuditSeverityOption
+    {
+        None = 0,
+        Trace = 1,
+        Debug = 2,
+        Information = 3,
+        Warning = 4,
+        Error = 5,
+        Critical = 6
+    }
 }

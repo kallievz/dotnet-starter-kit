@@ -2,6 +2,7 @@
 using FSH.Framework.Caching;
 using FSH.Framework.Core.Common;
 using FSH.Framework.Core.Exceptions;
+using FSH.Framework.Core.Context;
 using FSH.Framework.Eventing.Outbox;
 using FSH.Framework.Jobs.Services;
 using FSH.Framework.Mailing;
@@ -18,6 +19,7 @@ using FSH.Modules.Identity.Contracts.Services;
 using FSH.Modules.Identity.Data;
 using FSH.Modules.Identity.Features.v1.Roles;
 using FSH.Modules.Identity.Features.v1.Users;
+using FSH.Modules.Auditing.Contracts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
@@ -42,11 +44,15 @@ internal sealed partial class UserService(
     IStorageService storageService,
     IOutboxStore outboxStore,
     IOptions<OriginOptions> originOptions,
-    IHttpContextAccessor httpContextAccessor
+    IHttpContextAccessor httpContextAccessor,
+    ICurrentUser currentUser,
+    IAuditClient auditClient
     ) : IUserService
 {
     private readonly Uri? _originUrl = originOptions.Value.OriginUrl;
     private readonly IHttpContextAccessor _httpContextAccessor = httpContextAccessor;
+    private readonly ICurrentUser _currentUser = currentUser;
+    private readonly IAuditClient _auditClient = auditClient;
 
     private void EnsureValidTenant()
     {
@@ -207,19 +213,94 @@ internal sealed partial class UserService(
 
     public async Task ToggleStatusAsync(bool activateUser, string userId, CancellationToken cancellationToken)
     {
-        var user = await userManager.Users.Where(u => u.Id == userId).FirstOrDefaultAsync(cancellationToken);
+        EnsureValidTenant();
 
+        var actorId = _currentUser.GetUserId();
+        if (actorId == Guid.Empty)
+        {
+            throw new UnauthorizedException("authenticated user required to toggle status");
+        }
+
+        var actor = await userManager.FindByIdAsync(actorId.ToString());
+        _ = actor ?? throw new UnauthorizedException("current user not found");
+
+        async ValueTask AuditPolicyFailureAsync(string reason, CancellationToken ct)
+        {
+            var tenant = multiTenantContextAccessor?.MultiTenantContext?.TenantInfo?.Id ?? "unknown";
+            var claims = new Dictionary<string, object?>
+            {
+                ["actorId"] = actorId.ToString(),
+                ["targetUserId"] = userId,
+                ["tenant"] = tenant,
+                ["action"] = activateUser ? "activate" : "deactivate"
+            };
+
+            await _auditClient.WriteSecurityAsync(
+                SecurityAction.PolicyFailed,
+                subjectId: actorId.ToString(),
+                reasonCode: reason,
+                claims: claims,
+                severity: AuditSeverity.Warning,
+                source: "Identity",
+                ct: ct).ConfigureAwait(false);
+        }
+
+        if (!await userManager.IsInRoleAsync(actor, RoleConstants.Admin))
+        {
+            await AuditPolicyFailureAsync("ActorNotAdmin", cancellationToken);
+            throw new CustomException("Only administrators can toggle user status.");
+        }
+
+        if (!activateUser && string.Equals(actor.Id, userId, StringComparison.Ordinal))
+        {
+            await AuditPolicyFailureAsync("SelfDeactivationBlocked", cancellationToken);
+            throw new CustomException("Users cannot deactivate themselves.");
+        }
+
+        var user = await userManager.Users.Where(u => u.Id == userId).FirstOrDefaultAsync(cancellationToken);
         _ = user ?? throw new NotFoundException("User Not Found.");
 
-        bool isAdmin = await userManager.IsInRoleAsync(user, RoleConstants.Admin);
-        if (isAdmin)
+        bool targetIsAdmin = await userManager.IsInRoleAsync(user, RoleConstants.Admin);
+        if (targetIsAdmin)
         {
-            throw new CustomException("Administrators Profile's Status cannot be toggled");
+            await AuditPolicyFailureAsync("AdminDeactivationBlocked", cancellationToken);
+            throw new CustomException("Administrators cannot be deactivated.");
+        }
+
+        if (!activateUser)
+        {
+            var activeAdmins = await userManager.GetUsersInRoleAsync(RoleConstants.Admin);
+            int activeAdminCount = activeAdmins.Count(u => u.IsActive);
+            if (activeAdminCount == 0)
+            {
+                await AuditPolicyFailureAsync("NoActiveAdmins", cancellationToken);
+                throw new CustomException("Tenant must have at least one active administrator.");
+            }
         }
 
         user.IsActive = activateUser;
 
-        await userManager.UpdateAsync(user);
+        var result = await userManager.UpdateAsync(user);
+        if (!result.Succeeded)
+        {
+            var errors = result.Errors.Select(error => error.Description).ToList();
+            throw new CustomException("Toggle status failed", errors);
+        }
+
+        var tenantId = multiTenantContextAccessor?.MultiTenantContext?.TenantInfo?.Id ?? "unknown";
+        await _auditClient.WriteActivityAsync(
+            ActivityKind.Command,
+            name: "ToggleUserStatus",
+            statusCode: 204,
+            durationMs: 0,
+            captured: BodyCapture.None,
+            requestSize: 0,
+            responseSize: 0,
+            requestPreview: new { actorId = actorId.ToString(), targetUserId = userId, action = activateUser ? "activate" : "deactivate", tenant = tenantId },
+            responsePreview: new { outcome = "success" },
+            severity: AuditSeverity.Information,
+            source: "Identity",
+            ct: cancellationToken).ConfigureAwait(false);
     }
 
     public async Task UpdateAsync(string userId, string firstName, string lastName, string phoneNumber, FileUploadRequest image, bool deleteCurrentImage)

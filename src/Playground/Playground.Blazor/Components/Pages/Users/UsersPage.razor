@@ -1,0 +1,354 @@
+@page "/users"
+@using FSH.Playground.Blazor.ApiClient
+@inherits ComponentBase
+@using System.IdentityModel.Tokens.Jwt
+@using System.Security.Claims
+@using FSH.Framework.Shared.Constants
+@inject IIdentityClient IdentityClient
+@inject IUsersClient UsersClient
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject FSH.Playground.Blazor.Services.Api.ITokenAccessor TokenAccessor
+
+<MudPaper Class="fsh-card pa-4 mb-3">
+    <MudGrid GutterSize="2">
+        <MudItem xs="12" sm="6" md="4">
+            <MudTextField @bind-Value="_search"
+                          Label="Search (name/email)"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true"
+                          OnDebounceIntervalElapsed="OnSearchDebounced" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="4" Class="d-flex align-center">
+            <MudSwitch T="bool" @bind-Checked="_showInactive" Color="Color.Primary" Label="Include inactive" OnChanged="OnShowInactiveChanged" />
+        </MudItem>
+        <MudItem xs="12" sm="12" md="4" Class="d-flex justify-end align-center">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="ShowCreate">
+                New User
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudPaper Class="fsh-card pa-4">
+    <MudTable Items="_filtered" Dense="true" Hover="true">
+        <HeaderContent>
+            <MudTh>Name</MudTh>
+            <MudTh>Email</MudTh>
+            <MudTh>Status</MudTh>
+            <MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Name">@($"{context.FirstName} {context.LastName}".Trim())</MudTd>
+            <MudTd DataLabel="Email">@context.Email</MudTd>
+            <MudTd DataLabel="Status">
+                @if (context.IsActive)
+                {
+                    <MudChip T="string" Color="Color.Success" Size="Size.Small">Active</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Color="Color.Error" Size="Size.Small">Inactive</MudChip>
+                }
+            </MudTd>
+            <MudTd>
+                <MudIconButton Icon="@Icons.Material.Filled.Visibility"
+                               Color="Color.Primary"
+                               OnClick="@(() => GoToDetail(context.Id))" />
+                <MudTooltip Text="@GetToggleTooltip(context)">
+                    <MudIconButton Icon="@(context.IsActive ? Icons.Material.Filled.PauseCircle : Icons.Material.Filled.PlayCircle)"
+                                   Color="Color.Default"
+                                   OnClick="@(() => ToggleStatus(context))"
+                                   Disabled="@IsToggleDisabled(context)" />
+                </MudTooltip>
+                <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                               Color="Color.Error"
+                               OnClick="@(() => DeleteUser(context))"
+                               Disabled="_busyUserId == context.Id" />
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+</MudPaper>
+
+<MudDialog @bind-IsVisible="_showCreateDialog" MaxWidth="MaxWidth.Medium" CloseOnEscapeKey="true">
+    <DialogContent>
+        <MudText Typo="Typo.h6">Create User</MudText>
+        <MudForm @ref="_createForm" Model="_createModel" OnValidSubmit="CreateUser">
+            <MudGrid GutterSize="2" Class="mt-2">
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_createModel.FirstName" Label="First Name" Required="true" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_createModel.LastName" Label="Last Name" Required="true" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_createModel.Email" Label="Email" Required="true" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_createModel.UserName" Label="Username" Required="true" HelperText="Use email if unsure." />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_createModel.PhoneNumber" Label="Phone" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_createModel.Password" Label="Password" InputType="InputType.Password" Required="true" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_createModel.ConfirmPassword" Label="Confirm Password" InputType="InputType.Password" Required="true" />
+                </MudItem>
+            </MudGrid>
+            <MudStack Row="true" Spacing="2" Class="mt-3">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" ButtonType="ButtonType.Submit" Disabled="_createBusy" Loading="_createBusy">Create</MudButton>
+                <MudButton Variant="Variant.Text" Color="Color.Secondary" OnClick="CloseCreate" Disabled="_createBusy">Cancel</MudButton>
+            </MudStack>
+        </MudForm>
+    </DialogContent>
+</MudDialog>
+
+@code {
+    private List<UserDto> _users = new();
+    private List<UserDto> _filtered = new();
+    private string? _search;
+    private bool _showInactive;
+    private string? _busyUserId;
+    private bool _createBusy;
+    private bool _showCreateDialog;
+    private MudForm? _createForm;
+    private RegisterUserCommand _createModel = new();
+    private string? _currentUserId;
+    private readonly Dictionary<string, bool> _adminCache = new(StringComparer.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        ResolveCurrentUser();
+        await LoadUsers();
+    }
+
+    private async Task LoadUsers()
+    {
+        try
+        {
+            var result = await IdentityClient.UsersGetAsync();
+            _users = result?.ToList() ?? new List<UserDto>();
+            ApplyFilter();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load users: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void ApplyFilter()
+    {
+        var term = _search?.Trim().ToLowerInvariant();
+        _filtered = _users
+            .Where(u => (_showInactive || u.IsActive))
+            .Where(u => string.IsNullOrWhiteSpace(term) ||
+                        (u.Email?.ToLowerInvariant().Contains(term) ?? false) ||
+                        ($"{u.FirstName} {u.LastName}".ToLowerInvariant().Contains(term)))
+            .OrderBy(u => u.FirstName)
+            .ThenBy(u => u.LastName)
+            .ToList();
+        StateHasChanged();
+    }
+
+    private void ResolveCurrentUser()
+    {
+        try
+        {
+            var token = TokenAccessor.AccessToken;
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                return;
+            }
+
+            var handler = new JwtSecurityTokenHandler();
+            if (!handler.CanReadToken(token))
+            {
+                return;
+            }
+
+            var jwt = handler.ReadJwtToken(token);
+            _currentUserId = jwt.Claims.FirstOrDefault(c =>
+                    string.Equals(c.Type, JwtRegisteredClaimNames.Sub, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(c.Type, ClaimTypes.NameIdentifier, StringComparison.OrdinalIgnoreCase))
+                ?.Value;
+
+        }
+        catch
+        {
+            // Best-effort parsing; ignore token decode issues in the UI.
+        }
+    }
+
+    private bool IsCurrentUser(UserDto user) =>
+        !string.IsNullOrWhiteSpace(_currentUserId) &&
+        string.Equals(_currentUserId, user.Id, StringComparison.OrdinalIgnoreCase);
+
+    private bool IsToggleDisabled(UserDto user)
+    {
+        if (string.IsNullOrWhiteSpace(user.Id))
+        {
+            return true;
+        }
+
+        if (_busyUserId == user.Id)
+        {
+            return true;
+        }
+
+        // Optimistic disable for self; admin status resolved at click time.
+        return IsCurrentUser(user);
+    }
+
+    private string GetToggleTooltip(UserDto user)
+    {
+        if (IsCurrentUser(user))
+        {
+            return "You cannot deactivate your own account.";
+        }
+
+        return user.IsActive ? "Deactivate user" : "Activate user";
+    }
+
+    private async Task<bool> IsUserAdminAsync(string userId)
+    {
+        if (_adminCache.TryGetValue(userId, out var cached))
+        {
+            return cached;
+        }
+
+        try
+        {
+            var roles = await UsersClient.RolesGetAsync(Guid.Parse(userId));
+            var isAdmin = roles?.Any(r => string.Equals(r.RoleName, RoleConstants.Admin, StringComparison.OrdinalIgnoreCase) && r.Enabled) ?? false;
+            _adminCache[userId] = isAdmin;
+            return isAdmin;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Unable to verify user roles: {ex.Message}", Severity.Warning);
+            return false;
+        }
+    }
+
+    private Task OnSearchDebounced(string _)
+    {
+        ApplyFilter();
+        return Task.CompletedTask;
+    }
+
+    private Task OnShowInactiveChanged(bool _)
+    {
+        ApplyFilter();
+        return Task.CompletedTask;
+    }
+
+    private void GoToDetail(string? id)
+    {
+        if (Guid.TryParse(id, out var guid))
+        {
+            Navigation.NavigateTo($"/users/{guid}");
+        }
+    }
+
+    private async Task ToggleStatus(UserDto user)
+    {
+        if (string.IsNullOrWhiteSpace(user.Id)) return;
+
+        if (IsCurrentUser(user))
+        {
+            Snackbar.Add("You cannot deactivate your own account.", Severity.Warning);
+            return;
+        }
+
+        var isAdmin = await IsUserAdminAsync(user.Id);
+        if (isAdmin)
+        {
+            Snackbar.Add("Administrators cannot be deactivated.", Severity.Warning);
+            return;
+        }
+
+        _busyUserId = user.Id;
+        try
+        {
+            var command = new ToggleUserStatusCommand
+            {
+                ActivateUser = !user.IsActive,
+                UserId = user.Id
+            };
+            await IdentityClient.UsersPatchAsync(Guid.Parse(user.Id), command);
+            Snackbar.Add(user.IsActive ? "User deactivated" : "User activated", Severity.Success);
+            await LoadUsers();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to toggle user: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busyUserId = null;
+        }
+    }
+
+    private async Task DeleteUser(UserDto user)
+    {
+        if (string.IsNullOrWhiteSpace(user.Id)) return;
+        _busyUserId = user.Id;
+        try
+        {
+            await IdentityClient.UsersDeleteAsync(Guid.Parse(user.Id));
+            Snackbar.Add("User deleted", Severity.Success);
+            await LoadUsers();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to delete user: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busyUserId = null;
+        }
+    }
+
+    private void ShowCreate()
+    {
+        _createModel = new RegisterUserCommand();
+        _showCreateDialog = true;
+    }
+
+    private void CloseCreate()
+    {
+        _showCreateDialog = false;
+    }
+
+    private async Task CreateUser()
+    {
+        if (_createModel.Password != _createModel.ConfirmPassword)
+        {
+            Snackbar.Add("Passwords do not match.", Severity.Error);
+            return;
+        }
+
+        _createBusy = true;
+        try
+        {
+            await IdentityClient.RegisterAsync(_createModel);
+            Snackbar.Add("User created.", Severity.Success);
+            _showCreateDialog = false;
+            await LoadUsers();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to create user: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _createBusy = false;
+        }
+    }
+}

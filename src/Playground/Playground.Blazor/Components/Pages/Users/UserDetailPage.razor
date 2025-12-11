@@ -1,0 +1,318 @@
+@page "/users/{Id:guid}"
+@using FSH.Playground.Blazor.ApiClient
+@inherits ComponentBase
+@using System.Security.Claims
+@using FSH.Framework.Shared.Constants
+@using System.IdentityModel.Tokens.Jwt
+@inject IIdentityClient IdentityClient
+@inject IUsersClient UsersClient
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject FSH.Playground.Blazor.Services.Api.ITokenAccessor TokenAccessor
+
+<MudPaper Class="fsh-card pa-4 mb-3">
+    <MudText Typo="Typo.h6">User Detail</MudText>
+    <MudText Typo="Typo.caption" Color="Color.Secondary">@_user?.Email</MudText>
+</MudPaper>
+
+@if (_user is not null)
+{
+    <MudGrid GutterSize="2">
+        <MudItem xs="12" md="6">
+            <MudPaper Class="fsh-card pa-4">
+                <MudStack Spacing="1">
+                    <MudText Typo="Typo.subtitle1">Name: @_user.FirstName @_user.LastName</MudText>
+                    <MudText Typo="Typo.subtitle2">Email: @_user.Email</MudText>
+                    <MudText Typo="Typo.subtitle2">Phone: @_user.PhoneNumber</MudText>
+                    <MudChip T="string" Color="@(_user.IsActive ? Color.Success : Color.Error)" Size="Size.Small">
+                        @(_user.IsActive ? "Active" : "Inactive")
+                    </MudChip>
+                    @if (_user.EmailConfirmed)
+                    {
+                        <MudChip T="string" Color="Color.Success" Size="Size.Small">Email Confirmed</MudChip>
+                    }
+                    else
+                    {
+                        <MudChip T="string" Color="Color.Warning" Size="Size.Small">Email Not Confirmed</MudChip>
+                    }
+                </MudStack>
+                <MudStack Row="true" Spacing="2" Class="mt-3">
+                    <MudTooltip Text="@ToggleTooltip">
+                        <MudButton Variant="Variant.Filled"
+                                   Color="@(_user.IsActive ? Color.Warning : Color.Success)"
+                                   OnClick="ToggleStatus"
+                                   Disabled="@IsToggleDisabled">
+                            @_user.IsActive ? "Deactivate" : "Activate"
+                        </MudButton>
+                    </MudTooltip>
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Error"
+                               OnClick="DeleteUser"
+                               Disabled="_busy">
+                        Delete
+                    </MudButton>
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudPaper Class="fsh-card pa-4">
+                <MudText Typo="Typo.subtitle1">Roles</MudText>
+                @if (_roles.Count == 0)
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">No roles assigned.</MudText>
+                }
+                else
+                {
+                    <MudStack Row="true" Spacing="1">
+                        @foreach (var role in _roles)
+                        {
+                            <MudChip T="string" Color="Color.Primary" Variant="Variant.Outlined">@role.RoleName</MudChip>
+                        }
+                    </MudStack>
+                }
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">Role assignment editing is handled in Roles/Permissions PRD.</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudPaper Class="fsh-card pa-4">
+                <MudText Typo="Typo.subtitle1">Reset Password</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Requires reset token (from email flow).</MudText>
+                <MudForm @ref="_resetForm" Model="@_resetModel" OnValidSubmit="ResetPassword">
+                    <MudTextField @bind-Value="_resetModel.Email" Label="Email" Required="true" />
+                    <MudTextField @bind-Value="_resetModel.Password" Label="New Password" InputType="InputType.Password" Required="true" />
+                    <MudTextField @bind-Value="_resetModel.Token" Label="Reset Token" Required="true" />
+                    <MudStack Row="true" Spacing="2" Class="mt-2">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" ButtonType="ButtonType.Submit" Disabled="_busy">Reset</MudButton>
+                        <MudButton Variant="Variant.Text" Color="Color.Secondary" OnClick="ClearReset" Disabled="_busy">Clear</MudButton>
+                    </MudStack>
+                </MudForm>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudPaper Class="fsh-card pa-4">
+                <MudText Typo="Typo.subtitle1">Confirm Email</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Supply the confirmation code.</MudText>
+                <MudForm @ref="_confirmForm" Model="@_confirmModel" OnValidSubmit="ConfirmEmail">
+                    <MudTextField @bind-Value="_confirmModel.UserId" Label="User Id" Disabled="true" />
+                    <MudTextField @bind-Value="_confirmModel.Code" Label="Confirmation Code" Required="true" />
+                    <MudStack Row="true" Spacing="2" Class="mt-2">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" ButtonType="ButtonType.Submit" Disabled="_busy">Confirm</MudButton>
+                        <MudButton Variant="Variant.Text" Color="Color.Secondary" OnClick="ClearConfirm" Disabled="_busy">Clear</MudButton>
+                    </MudStack>
+                </MudForm>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+else
+{
+    <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private UserDto? _user;
+    private List<UserRoleDto> _roles = new();
+    private bool _busy;
+    private MudForm? _resetForm;
+    private ResetPasswordCommand _resetModel = new();
+    private MudForm? _confirmForm;
+    private ConfirmEmailModel _confirmModel = new();
+    private const string TenantContext = "root";
+    private string? _currentUserId;
+    private bool _targetIsAdmin;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        ResolveCurrentUser();
+        await LoadUser();
+    }
+
+    private async Task LoadUser()
+    {
+        try
+        {
+            _user = await IdentityClient.UsersGetAsync(Id);
+            _roles = (await UsersClient.RolesGetAsync(Id))?.ToList() ?? new List<UserRoleDto>();
+            _resetModel.Email = _user?.Email ?? string.Empty;
+            _confirmModel.UserId = _user?.Id ?? string.Empty;
+            _targetIsAdmin = _roles.Any(r => string.Equals(r.RoleName, RoleConstants.Admin, StringComparison.OrdinalIgnoreCase) && r.Enabled);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load user: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void ResolveCurrentUser()
+    {
+        try
+        {
+            var token = TokenAccessor.AccessToken;
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                return;
+            }
+
+            var handler = new JwtSecurityTokenHandler();
+            if (!handler.CanReadToken(token))
+            {
+                return;
+            }
+
+            var jwt = handler.ReadJwtToken(token);
+            _currentUserId = jwt.Claims.FirstOrDefault(c =>
+                    string.Equals(c.Type, JwtRegisteredClaimNames.Sub, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(c.Type, ClaimTypes.NameIdentifier, StringComparison.OrdinalIgnoreCase))
+                ?.Value;
+
+        }
+        catch
+        {
+            // Best-effort parsing; ignore token decode issues in the UI.
+        }
+    }
+
+    private bool IsCurrentUser =>
+        _user is not null &&
+        !string.IsNullOrWhiteSpace(_currentUserId) &&
+        string.Equals(_currentUserId, _user.Id, StringComparison.OrdinalIgnoreCase);
+
+    private bool IsToggleDisabled => _busy || _user is null || IsCurrentUser || _targetIsAdmin;
+
+    private string ToggleTooltip
+    {
+        get
+        {
+            if (_user is null)
+            {
+                return "User not loaded.";
+            }
+
+            if (IsCurrentUser)
+            {
+                return "You cannot deactivate your own account.";
+            }
+
+            if (_targetIsAdmin)
+            {
+                return "Administrators cannot be deactivated.";
+            }
+
+            return _user.IsActive ? "Deactivate user" : "Activate user";
+        }
+    }
+
+    private async Task ToggleStatus()
+    {
+        if (_user is null || string.IsNullOrWhiteSpace(_user.Id)) return;
+
+        if (IsCurrentUser)
+        {
+            Snackbar.Add("You cannot deactivate your own account.", Severity.Warning);
+            return;
+        }
+
+        if (_targetIsAdmin)
+        {
+            Snackbar.Add("Administrators cannot be deactivated.", Severity.Warning);
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await IdentityClient.UsersPatchAsync(Id, new ToggleUserStatusCommand
+            {
+                ActivateUser = !_user.IsActive,
+                UserId = _user.Id
+            });
+            Snackbar.Add(_user.IsActive ? "User deactivated" : "User activated", Severity.Success);
+            await LoadUser();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to toggle status: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DeleteUser()
+    {
+        if (_user is null || string.IsNullOrWhiteSpace(_user.Id)) return;
+        _busy = true;
+        try
+        {
+            await IdentityClient.UsersDeleteAsync(Id);
+            Snackbar.Add("User deleted", Severity.Success);
+            Navigation.NavigateTo("/users");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to delete user: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ResetPassword()
+    {
+        if (_user is null) return;
+        _busy = true;
+        try
+        {
+            await IdentityClient.ResetPasswordAsync(TenantContext, _resetModel);
+            Snackbar.Add("Password reset.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to reset password: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void ClearReset()
+    {
+        _resetModel = new ResetPasswordCommand { Email = _user?.Email ?? string.Empty };
+    }
+
+    private async Task ConfirmEmail()
+    {
+        if (_user is null) return;
+        _busy = true;
+        try
+        {
+            await IdentityClient.ConfirmEmailAsync(_confirmModel.UserId, _confirmModel.Code ?? string.Empty, TenantContext);
+            Snackbar.Add("Email confirmed.", Severity.Success);
+            await LoadUser();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to confirm email: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void ClearConfirm()
+    {
+        _confirmModel.Code = string.Empty;
+    }
+
+    private sealed class ConfirmEmailModel
+    {
+        public string UserId { get; set; } = string.Empty;
+        public string? Code { get; set; }
+    }
+}

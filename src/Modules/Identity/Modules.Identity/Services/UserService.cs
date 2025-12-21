@@ -19,6 +19,7 @@ using FSH.Modules.Identity.Contracts.Services;
 using FSH.Modules.Identity.Data;
 using FSH.Modules.Identity.Features.v1.Roles;
 using FSH.Modules.Identity.Features.v1.Users;
+using FSH.Modules.Identity.Services;
 using FSH.Modules.Auditing.Contracts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
@@ -46,13 +47,17 @@ internal sealed partial class UserService(
     IOptions<OriginOptions> originOptions,
     IHttpContextAccessor httpContextAccessor,
     ICurrentUser currentUser,
-    IAuditClient auditClient
+    IAuditClient auditClient,
+    IPasswordHistoryService passwordHistoryService,
+    IPasswordExpiryService passwordExpiryService
     ) : IUserService
 {
     private readonly Uri? _originUrl = originOptions.Value.OriginUrl;
     private readonly IHttpContextAccessor _httpContextAccessor = httpContextAccessor;
     private readonly ICurrentUser _currentUser = currentUser;
     private readonly IAuditClient _auditClient = auditClient;
+    private readonly IPasswordHistoryService _passwordHistoryService = passwordHistoryService;
+    private readonly IPasswordExpiryService _passwordExpiryService = passwordExpiryService;
 
     private void EnsureValidTenant()
     {

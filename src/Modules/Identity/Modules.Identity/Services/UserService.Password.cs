@@ -68,5 +68,20 @@ internal sealed partial class UserService
             var errors = result.Errors.Select(e => e.Description).ToList();
             throw new CustomException("failed to change password", errors);
         }
+
+        // Save the old password hash to history after successful password change
+        // Reload user to get the new password hash
+        user = await userManager.FindByIdAsync(userId);
+        if (user is not null)
+        {
+            // Update password expiry date
+            _passwordExpiryService.UpdateLastPasswordChangeDate(user);
+
+            // Save to history
+            await _passwordHistoryService.SavePasswordHistoryAsync(user);
+
+            // Update user with new password change date
+            await userManager.UpdateAsync(user);
+        }
     }
 }

@@ -8,6 +8,7 @@ using FSH.Framework.Shared.Persistence;
 using FSH.Modules.Identity.Features.v1.RoleClaims;
 using FSH.Modules.Identity.Features.v1.Roles;
 using FSH.Modules.Identity.Features.v1.Users;
+using FSH.Modules.Identity.Features.v1.Users.PasswordHistory;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
@@ -31,6 +32,8 @@ public class IdentityDbContext : MultiTenantIdentityDbContext<FshUser,
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
     public DbSet<InboxMessage> InboxMessages => Set<InboxMessage>();
+
+    public DbSet<PasswordHistory> PasswordHistories => Set<PasswordHistory>();
 
     public IdentityDbContext(
         IMultiTenantContextAccessor<AppTenantInfo> multiTenantContextAccessor,

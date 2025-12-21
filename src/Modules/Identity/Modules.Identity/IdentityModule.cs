@@ -45,6 +45,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
@@ -74,6 +75,16 @@ public class IdentityModule : IModule
                 name: "db:identity",
                 failureStatus: HealthStatus.Unhealthy);
         services.AddScoped<IDbInitializer, IdentityDbInitializer>();
+
+        // Configure password policy options
+        services.Configure<PasswordPolicyOptions>(builder.Configuration.GetSection("PasswordPolicy"));
+
+        // Register password history service
+        services.AddScoped<IPasswordHistoryService, PasswordHistoryService>();
+
+        // Register password expiry service
+        services.AddScoped<IPasswordExpiryService, PasswordExpiryService>();
+
         services.AddIdentity<FshUser, FshRole>(options =>
         {
             options.Password.RequiredLength = IdentityModuleConstants.PasswordLength;
